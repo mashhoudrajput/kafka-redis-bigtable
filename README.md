@@ -1,114 +1,76 @@
-# MedicalCircle Dev Infrastructure
+# MedicalCircle Dev Infrastructure (Docker on VM)
 
-Local replacements for GCP managed services, running on the `db-init-cluster-001-dev` VM
-(`me-central2-a`, internal IP `10.216.0.10`) to reduce dev environment costs.
+Cost-saving replacement for GCP managed services in the dev environment.
+Everything runs in Docker on a single VM instead of separate managed services.
 
 | Service | Replaces | Port | UI |
 |---|---|---|---|
-| Kafka | `medicalcircle-kafka-cluster-dev` (Managed Kafka) | `9092` | `http://10.216.0.10:8080` |
-| Redis | Cloud Memorystore | `6379` | `http://10.216.0.10:8081` |
+| Kafka | `medicalcircle-kafka-cluster-dev` (Managed Kafka) | `9092` (SASL_SSL) | `http://10.216.0.17:8080` |
+| Redis | Cloud Memorystore | `6379` | `http://10.216.0.17:8081` |
 | Bigtable | Cloud Bigtable | `8086` (gRPC) | — |
 
----
-
-## Prerequisites
-
-- Docker + Docker Compose v2 on the VM
-- VM firewall allows TCP `9092`, `6379`, `8086`, `8080`, `8081` from Cloud Run's VPC subnet
-
-```bash
-gcloud compute firewall-rules create allow-dev-services-internal \
-  --network=default \
-  --allow=tcp:9092,tcp:6379,tcp:8086,tcp:8080,tcp:8081 \
-  --source-ranges=10.0.0.0/8 \
-  --description="Dev infra ports for Cloud Run internal access"
-```
+**VM:** `dev-emulator-kafka-redis-bigtable` · zone `me-central2-a` · internal `10.216.0.17` · external `34.166.80.237`
 
 ---
 
-## Deploy
-
-SSH into the VM, copy the folders, then start each service:
+## Deploy (fresh VM)
 
 ```bash
-gcloud compute scp --recurse kafka/ redis/ bigtable/ \
-  db-init-cluster-001-dev:~/ --zone=me-central2-a
-```
+# SSH into the VM
+ssh -i ~/.ssh/id_ed25519 ubuntu@34.166.80.237
 
-```bash
-gcloud compute ssh db-init-cluster-001-dev --zone=me-central2-a
-```
+# Clone the repo
+git clone git@github.com:mashhoudrajput/kafka-redis-bigtable.git
+cd kafka-redis-bigtable
 
-### Kafka
+# Start all three stacks
+cd kafka   && cp .env.example .env && nano .env   # set KAFKA_HOST_IP=10.216.0.17
+docker compose up -d --build
+bash create-topics.sh
 
-```bash
-cd ~/kafka
-chmod +x init-topics.sh
-sudo docker compose up -d
+cd ../redis
+docker compose up -d
 
-# Watch startup
-sudo docker logs -f kafka
-
-# Verify topics were created
-sudo docker logs kafka-init
-```
-
-Creates 20 topics mirroring production. UI at `http://10.216.0.10:8080`.
-
-### Redis
-
-```bash
-cd ~/redis
-sudo docker compose up -d
-```
-
-Single-node, no auth, 256 MB memory cap. UI at `http://10.216.0.10:8081`.
-
-### Bigtable emulator
-
-```bash
-cd ~/bigtable
-chmod +x init-tables.sh
-sudo docker compose up -d
-
-# Verify tables were created
-sudo docker logs bigtable-init
+cd ../bigtable
+docker compose up -d   # bigtable-init runs automatically and creates all tables
 ```
 
 ---
 
-## Update Cloud Run services
+## Kafka
 
-For each Cloud Run service, update these environment variables:
+### How it works
 
-### Kafka
+- **Port 9092 (EXTERNAL)** — SASL_SSL listener for Cloud Run. Accepts any credentials via a dev-mode `AllowAllLoginModule` (no credential checking). TLS is terminated here with a self-signed cert.
+- **Port 29092 (INTERNAL)** — PLAINTEXT listener for Docker-internal access (`kafka-ui`, `create-topics.sh`, healthcheck).
 
+The Docker image is built locally from `kafka/Dockerfile`:
+- Stage 1: compiles `AllowAllLoginModule.java` using JDK
+- Stage 2: copies the JAR into `apache/kafka:3.9.0` and installs `kafka-startup.sh` as entrypoint
+
+`kafka-startup.sh` runs on every container start and generates fresh self-signed SSL certs in `/tmp/kafka-ssl/`.
+
+### Cloud Run requirements
+
+The `messageingestion` service must have `kafkaConfig.ssl = false` OR `NODE_TLS_REJECT_UNAUTHORIZED=0` set, because the broker uses a self-signed cert that Node.js doesn't trust by default.
+
+Current env vars in Cloud Run (do not change these):
 ```
-KAFKA_BOOTSTRAP_SERVERS  →  10.216.0.10:9092
-KAFKA_SECURITY_PROTOCOL  →  PLAINTEXT
+KAFKA_BROKER=10.216.0.17:9092
+KAFKA_USERNAME=<secret>    # triggers ssl:true + sasl in the app
+KAFKA_PASSWORD=<secret>
 ```
-Remove any `KAFKA_SSL_*` or `KAFKA_SASL_*` variables.
 
-### Redis
+Pending fix in app code: change `kafkaConfig.ssl = true` → `kafkaConfig.ssl = false` (or `{ rejectUnauthorized: false }`) when connecting to a dev broker.
 
+### Create / recreate topics
+
+```bash
+# Run from the VM host (not inside a container)
+bash ~/kafka-redis-bigtable/kafka/create-topics.sh
 ```
-REDIS_HOST  →  10.216.0.10
-REDIS_PORT  →  6379
-```
-Remove any TLS or auth variables used with Memorystore.
 
-### Bigtable
-
-```
-BIGTABLE_EMULATOR_HOST  →  10.216.0.10:8086
-```
-Setting `BIGTABLE_EMULATOR_HOST` makes the official Google Bigtable client libraries
-automatically route all traffic to the emulator instead of GCP.
-Do not set `GOOGLE_APPLICATION_CREDENTIALS` for Bigtable in dev — the emulator ignores auth.
-
----
-
-## Topics (Kafka)
+### Kafka topics
 
 | Topic | Partitions |
 |---|---|
@@ -124,34 +86,83 @@ Do not set `GOOGLE_APPLICATION_CREDENTIALS` for Bigtable in dev — the emulator
 | `msg.tasklist.t0/t1/t2` | 3 each |
 | `msg.user.t0/t1/t2` | 3 each |
 
-UUID-based topics (`ab3b7a1d-...`, `private_*_stream`) are created dynamically by the app.
-Enable `KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"` in `kafka/docker-compose.yml` if needed.
+UUID-based topics are created dynamically by the app. Set `KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"` in `kafka/docker-compose.yml` if needed.
+
+---
+
+## Redis
+
+Single-node, no auth, 256 MB memory cap. No changes needed in Cloud Run — `REDIS_ENDPOINT` secret already points to `10.216.0.17:6379`.
+
+---
+
+## Bigtable Emulator
+
+Instance name: `medicalcircles-messaging-dev`  
+Project: `lively-synapse-400818`
+
+`bigtable-init` runs once on first `docker compose up` and creates all 10 tables.
+
+### Tables
+
+| Table | Column Family |
+|---|---|
+| `inbox_by_user` | `m` |
+| `messages` | `body` |
+| `broadcasts_global` | `b` |
+| `broadcasts_hospital` | `b` |
+| `progress_global_by_user` | `p` |
+| `progress_hospital_by_user` | `p` |
+| `counter_global` | `c` |
+| `counter_hospital` | `c` |
+| `counter_global_seq` | `c` |
+| `counter_hospital_seq` | `c` |
+
+To re-run the table bootstrap manually:
+
+```bash
+docker run --rm \
+  --network bigtable_default \
+  -e BIGTABLE_EMULATOR_HOST=bigtable-emulator:8086 \
+  -e BIGTABLE_PROJECT=lively-synapse-400818 \
+  -e BIGTABLE_INSTANCE=medicalcircles-messaging-dev \
+  -v $(pwd)/bigtable/bootstrap-bigtable.sh:/bootstrap.sh:ro \
+  gcr.io/google.com/cloudsdktool/cloud-sdk:latest \
+  bash /bootstrap.sh
+```
 
 ---
 
 ## Useful commands
 
 ```bash
-# Restart everything
-sudo docker compose -f ~/kafka/docker-compose.yml restart
-sudo docker compose -f ~/redis/docker-compose.yml restart
-sudo docker compose -f ~/bigtable/docker-compose.yml restart
+# ── Kafka ──────────────────────────────────────────────────────────────────
+# List topics (uses the PLAINTEXT internal listener, no SSL/SASL needed)
+docker exec kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:29092 --list
 
-# Stop and wipe data (full reset)
-sudo docker compose -f ~/kafka/docker-compose.yml down -v
-sudo docker compose -f ~/redis/docker-compose.yml down -v
-sudo docker compose -f ~/bigtable/docker-compose.yml down -v
+# Re-create all topics after a restart
+bash ~/kafka-redis-bigtable/kafka/create-topics.sh
 
-# Re-run topic/table init manually
-sudo docker start kafka-init
-sudo docker start bigtable-init
+# ── Redis ───────────────────────────────────────────────────────────────────
+docker exec -it redis redis-cli
 
-# List Kafka topics
-sudo docker exec kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --list
+# ── Bigtable ────────────────────────────────────────────────────────────────
+# List tables
+docker exec bigtable-emulator bash -c \
+  "BIGTABLE_EMULATOR_HOST=localhost:8086 cbt \
+   -project lively-synapse-400818 \
+   -instance medicalcircles-messaging-dev ls"
 
-# Redis CLI
-sudo docker exec -it redis redis-cli
+# ── Restart stacks ──────────────────────────────────────────────────────────
+docker compose -f ~/kafka-redis-bigtable/kafka/docker-compose.yml restart
+docker compose -f ~/kafka-redis-bigtable/redis/docker-compose.yml restart
+docker compose -f ~/kafka-redis-bigtable/bigtable/docker-compose.yml restart
+
+# ── Full reset (destroys data) ───────────────────────────────────────────────
+docker compose -f ~/kafka-redis-bigtable/kafka/docker-compose.yml down -v
+docker compose -f ~/kafka-redis-bigtable/redis/docker-compose.yml down -v
+docker compose -f ~/kafka-redis-bigtable/bigtable/docker-compose.yml down -v
 ```
 
 ---
@@ -160,13 +171,18 @@ sudo docker exec -it redis redis-cli
 
 ```
 kafka/
-  docker-compose.yml    apache/kafka:3.9.0 + kafka-ui
-  init-topics.sh        creates all 20 topics on first start
+  Dockerfile              multi-stage: compiles AllowAllLoginModule.java, extends apache/kafka:3.9.0
+  AllowAllLoginModule.java  dev-only SASL module that accepts any credentials
+  kafka-startup.sh        entrypoint: generates SSL certs, then starts KafkaDockerWrapper
+  docker-compose.yml      SASL_SSL on 9092, PLAINTEXT on 29092, kafka-ui on 8080
+  create-topics.sh        creates all 20 topics (run manually after first start)
+  .env                    KAFKA_HOST_IP=10.216.0.17  ← gitignored
+  .env.example            template
 
 redis/
-  docker-compose.yml    redis:7.4-alpine + redis-commander
+  docker-compose.yml      redis:7.4-alpine on 6379, redis-commander on 8081
 
 bigtable/
-  docker-compose.yml    cloud-sdk bigtable emulator
-  init-tables.sh        creates tables on first start
+  docker-compose.yml      cloud-sdk emulator on 8086 + init container
+  bootstrap-bigtable.sh   creates all 10 tables in medicalcircles-messaging-dev instance
 ```

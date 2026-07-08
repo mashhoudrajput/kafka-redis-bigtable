@@ -1,20 +1,38 @@
 services:
   kafka:
-    image: apache/kafka:3.9.0
+    build: .
     container_name: kafka
     restart: unless-stopped
     ports:
       - "9092:9092"
       - "9093:9093"
     environment:
+      KAFKA_HOST_IP: ${KAFKA_HOST_IP}
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # EXTERNAL uses SASL_SSL (matches Cloud Run: TLS + SASL/PLAIN with SA credentials)
+      # INTERNAL uses plain PLAINTEXT (for kafka-ui and create-topics.sh)
       KAFKA_LISTENERS: EXTERNAL://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://localhost:9093
       KAFKA_ADVERTISED_LISTENERS: EXTERNAL://${KAFKA_HOST_IP}:9092,INTERNAL://kafka:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:SASL_SSL,INTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
+      # SASL/PLAIN on the EXTERNAL listener — AllowAllLoginModule accepts any credentials
+      KAFKA_LISTENER_NAME_EXTERNAL_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG: "AllowAllLoginModule required;"
+
+      # SSL — certs are generated at startup by kafka-startup.sh
+      KAFKA_SSL_KEYSTORE_LOCATION: /tmp/kafka-ssl/broker.jks
+      KAFKA_SSL_KEYSTORE_PASSWORD: kafkadev
+      KAFKA_SSL_KEY_PASSWORD: kafkadev
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /tmp/kafka-ssl/truststore.jks
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: kafkadev
+      KAFKA_SSL_CLIENT_AUTH: none
+      KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -22,14 +40,16 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_LOG_RETENTION_HOURS: 48
       KAFKA_LOG_SEGMENT_BYTES: 104857600
+    entrypoint: ["/bin/bash", "/opt/kafka/bin/kafka-startup.sh"]
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      # Use the PLAINTEXT internal listener so the healthcheck doesn't need SSL/SASL config
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 > /dev/null 2>&1"]
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 60s
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest

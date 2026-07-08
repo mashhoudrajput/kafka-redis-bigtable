@@ -1,16 +1,21 @@
 #!/bin/bash
-# Run this script on the VM host (not inside a container)
+# Run on the VM host (not inside a container)
 # Usage: bash create-topics.sh
 
 set -e
-BIN="docker exec kafka /opt/kafka/bin/kafka-topics.sh"
-BS="--bootstrap-server localhost:9092"
 
-echo "Waiting for Kafka..."
+BIN="docker exec kafka /opt/kafka/bin/kafka-topics.sh"
+# Use the PLAINTEXT internal listener — no SSL/SASL config needed from the host
+BS="--bootstrap-server localhost:29092"
+
+echo "Waiting for Kafka ..."
 until $BIN $BS --list > /dev/null 2>&1; do sleep 2; done
 echo "Kafka ready."
 
-t() { $BIN $BS --create --if-not-exists --topic "$1" --partitions "$2" --replication-factor 1 && echo "  [ok] $1" || echo "  [skip] $1"; }
+t() {
+  $BIN $BS --create --if-not-exists --topic "$1" --partitions "$2" --replication-factor 1 \
+    && echo "  [ok] $1" || echo "  [skip] $1"
+}
 
 t ehr.events                       1
 t workflow.events                  1

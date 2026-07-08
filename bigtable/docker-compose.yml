@@ -7,7 +7,7 @@ services:
       - "8086:8086"
     command: gcloud beta emulators bigtable start --host-port=0.0.0.0:8086
     healthcheck:
-      # gRPC port — use bash tcp check since curl won't work against gRPC
+      # gRPC port — bash tcp probe since curl can't speak gRPC
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8086' 2>/dev/null"]
       interval: 10s
       timeout: 5s
@@ -15,16 +15,17 @@ services:
       start_period: 15s
 
   bigtable-init:
-    # Use full image so cbt tool is available
+    # Must use cloud-sdk:latest (not :emulators) — only :latest ships the cbt CLI
     image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     container_name: bigtable-init
+    restart: "no"
     depends_on:
       bigtable-emulator:
         condition: service_healthy
-    restart: "no"
     environment:
       BIGTABLE_EMULATOR_HOST: bigtable-emulator:8086
-      PROJECT_ID: lively-synapse-400818
+      BIGTABLE_PROJECT: lively-synapse-400818
+      BIGTABLE_INSTANCE: medicalcircles-messaging-dev
     volumes:
-      - ./init-tables.sh:/init-tables.sh:ro
-    entrypoint: ["/bin/bash", "/init-tables.sh"]
+      - ./bootstrap-bigtable.sh:/bootstrap.sh:ro
+    entrypoint: ["/bin/bash", "/bootstrap.sh"]
