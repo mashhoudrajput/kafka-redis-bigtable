@@ -160,11 +160,11 @@ bash ~/kafka-redis-bigtable/kafka/create-topics.sh
 docker exec -it redis redis-cli
 
 # ── Bigtable ────────────────────────────────────────────────────────────────
-# List tables (use numeric project number — tables are stored under 677473027585)
-docker exec bigtable-emulator bash -c \
-  "BIGTABLE_EMULATOR_HOST=localhost:8086 cbt \
-   -project 677473027585 \
-   -instance medicalcircles-messaging-dev ls"
+# List tables — cbt is only in cloud-sdk:latest, not in the emulator image
+docker run --rm --network bigtable_default \
+  -e BIGTABLE_EMULATOR_HOST=bigtable-emulator:8086 \
+  gcr.io/google.com/cloudsdktool/cloud-sdk:latest \
+  cbt -project 677473027585 -instance medicalcircles-messaging-dev ls
 
 # ── Restart stacks ──────────────────────────────────────────────────────────
 docker compose -f ~/kafka-redis-bigtable/kafka/docker-compose.yml restart
