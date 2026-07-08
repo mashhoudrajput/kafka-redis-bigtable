@@ -19,8 +19,8 @@ Everything runs in Docker on a single VM instead of separate managed services.
 # SSH into the VM
 ssh -i ~/.ssh/id_ed25519 ubuntu@34.166.80.237
 
-# Clone the repo
-git clone git@github.com:mashhoudrajput/kafka-redis-bigtable.git
+# Clone the repo (use HTTPS — SSH host key verification fails on this VM)
+git clone https://github.com/mashhoudrajput/kafka-redis-bigtable.git
 cd kafka-redis-bigtable
 
 # Start all three stacks
@@ -52,16 +52,26 @@ The Docker image is built locally from `kafka/Dockerfile`:
 
 ### Cloud Run requirements
 
-The `messageingestion` service must have `kafkaConfig.ssl = false` OR `NODE_TLS_REJECT_UNAUTHORIZED=0` set, because the broker uses a self-signed cert that Node.js doesn't trust by default.
+Plain-value env vars set on the `messageingestion` service:
 
-Current env vars in Cloud Run (do not change these):
-```
-KAFKA_BROKER=10.216.0.17:9092
-KAFKA_USERNAME=<secret>    # triggers ssl:true + sasl in the app
-KAFKA_PASSWORD=<secret>
-```
+| Env var | Value | Purpose |
+|---|---|---|
+| `KAFKA_BROKER` | `10.216.0.17:9092` | VM broker address |
+| `BIGTABLE_EMULATOR_HOST` | `10.216.0.17:8086` | Routes Bigtable to VM emulator |
+| `BIGTABLE_DISABLE_METRICS` | `true` | Disables GCP LB metrics that can hijack the emulator connection |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | `0` | Temporary: Node.js global TLS bypass |
 
-Pending fix in app code: change `kafkaConfig.ssl = true` → `kafkaConfig.ssl = false` (or `{ rejectUnauthorized: false }`) when connecting to a dev broker.
+Secret-based env vars remain unchanged: `KAFKA_USERNAME`, `KAFKA_PASSWORD`, `BIGTABLE_INSTANCE_ID`, `GCP_PROJECT`, etc.
+
+**Pending app code fix (one line):** In `kafkaHandler.js`, change:
+```js
+kafkaConfig.ssl = true;
+```
+to:
+```js
+kafkaConfig.ssl = { rejectUnauthorized: false };
+```
+`NODE_TLS_REJECT_UNAUTHORIZED=0` is active but KafkaJS overrides it internally; the explicit option is required. Once this is deployed, remove `NODE_TLS_REJECT_UNAUTHORIZED` from Cloud Run.
 
 ### Create / recreate topics
 
@@ -99,7 +109,9 @@ Single-node, no auth, 256 MB memory cap. No changes needed in Cloud Run — `RED
 ## Bigtable Emulator
 
 Instance name: `medicalcircles-messaging-dev`  
-Project: `lively-synapse-400818`
+Project: `677473027585` (numeric ID for `lively-synapse-400818`)
+
+> **Why the number?** `@google-cloud/bigtable` v6 resolves the project string to its numeric ID via the Resource Manager API before querying Bigtable. The emulator namespace must match what the client sends, so all tooling uses `677473027585`.
 
 `bigtable-init` runs once on first `docker compose up` and creates all 10 tables.
 
@@ -124,7 +136,7 @@ To re-run the table bootstrap manually:
 docker run --rm \
   --network bigtable_default \
   -e BIGTABLE_EMULATOR_HOST=bigtable-emulator:8086 \
-  -e BIGTABLE_PROJECT=lively-synapse-400818 \
+  -e BIGTABLE_PROJECT=677473027585 \
   -e BIGTABLE_INSTANCE=medicalcircles-messaging-dev \
   -v $(pwd)/bigtable/bootstrap-bigtable.sh:/bootstrap.sh:ro \
   gcr.io/google.com/cloudsdktool/cloud-sdk:latest \
@@ -148,10 +160,10 @@ bash ~/kafka-redis-bigtable/kafka/create-topics.sh
 docker exec -it redis redis-cli
 
 # ── Bigtable ────────────────────────────────────────────────────────────────
-# List tables
+# List tables (use numeric project number — tables are stored under 677473027585)
 docker exec bigtable-emulator bash -c \
   "BIGTABLE_EMULATOR_HOST=localhost:8086 cbt \
-   -project lively-synapse-400818 \
+   -project 677473027585 \
    -instance medicalcircles-messaging-dev ls"
 
 # ── Restart stacks ──────────────────────────────────────────────────────────

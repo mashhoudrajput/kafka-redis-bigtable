@@ -8,16 +8,20 @@
 #   Safe to re-run — every step is idempotent (already-exists is not an error).
 #
 # Usage:
-#   BIGTABLE_EMULATOR_HOST=34.166.80.237:8086 ./bootstrap-bigtable.sh
+#   BIGTABLE_EMULATOR_HOST=10.216.0.17:8086 ./bootstrap-bigtable.sh
 #
 #   Optional overrides:
-#     BIGTABLE_PROJECT=lively-synapse-400818
+#     BIGTABLE_PROJECT=677473027585   (numeric project NUMBER for lively-synapse-400818)
 #     BIGTABLE_INSTANCE=medicalcircles-messaging-dev
+#
+# NOTE: Use the numeric project NUMBER (677473027585), not the string ID (lively-synapse-400818).
+# The @google-cloud/bigtable Node.js client v6 resolves the project ID to its number via
+# Resource Manager before querying, so the emulator namespace must match.
 
 set -euo pipefail
 
-: "${BIGTABLE_EMULATOR_HOST:?ERROR: BIGTABLE_EMULATOR_HOST must be set, e.g. BIGTABLE_EMULATOR_HOST=34.166.80.237:8086}"
-BIGTABLE_PROJECT="${BIGTABLE_PROJECT:-lively-synapse-400818}"
+: "${BIGTABLE_EMULATOR_HOST:?ERROR: BIGTABLE_EMULATOR_HOST must be set, e.g. BIGTABLE_EMULATOR_HOST=10.216.0.17:8086}"
+BIGTABLE_PROJECT="${BIGTABLE_PROJECT:-677473027585}"
 BIGTABLE_INSTANCE="${BIGTABLE_INSTANCE:-medicalcircles-messaging-dev}"
 
 export BIGTABLE_EMULATOR_HOST
