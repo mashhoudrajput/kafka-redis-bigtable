@@ -20,9 +20,13 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT,INTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
 
-      # SASL/PLAIN on the EXTERNAL listener — AllowAllLoginModule accepts any credentials
+      # SASL/PLAIN on the EXTERNAL listener.
+      # AllowAllCallbackHandler replaces PlainServerCallbackHandler so any credentials pass.
+      # The username is a GCP SA email and password is a base64 SA JSON key — they can't
+      # be listed as user_*=* entries in the JAAS config, hence the custom callback handler.
       KAFKA_LISTENER_NAME_EXTERNAL_SASL_ENABLED_MECHANISMS: PLAIN
-      KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG: "AllowAllLoginModule required;"
+      KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG: "org.apache.kafka.common.security.plain.PlainLoginModule required;"
+      KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_SERVER_CALLBACK_HANDLER_CLASS: AllowAllCallbackHandler
 
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
