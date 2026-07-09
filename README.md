@@ -41,7 +41,7 @@ docker compose up -d   # bigtable-init runs automatically and creates all tables
 
 ### How it works
 
-- **Port 9092 (EXTERNAL)** — SASL_SSL listener for Cloud Run. Accepts any credentials via a dev-mode `AllowAllLoginModule` (no credential checking). TLS is terminated here with a self-signed cert.
+- **Port 9092 (EXTERNAL)** — SASL_PLAINTEXT listener for Cloud Run. App connects with `ssl: false` + SASL/PLAIN. Accepts any credentials via `AllowAllLoginModule` (dev-only, no credential checking).
 - **Port 29092 (INTERNAL)** — PLAINTEXT listener for Docker-internal access (`kafka-ui`, `create-topics.sh`, healthcheck).
 
 The Docker image is built locally from `kafka/Dockerfile`:
@@ -63,15 +63,7 @@ Plain-value env vars set on the `messageingestion` service:
 
 Secret-based env vars remain unchanged: `KAFKA_USERNAME`, `KAFKA_PASSWORD`, `BIGTABLE_INSTANCE_ID`, `GCP_PROJECT`, etc.
 
-**Pending app code fix (one line):** In `kafkaHandler.js`, change:
-```js
-kafkaConfig.ssl = true;
-```
-to:
-```js
-kafkaConfig.ssl = { rejectUnauthorized: false };
-```
-`NODE_TLS_REJECT_UNAUTHORIZED=0` is active but KafkaJS overrides it internally; the explicit option is required. Once this is deployed, remove `NODE_TLS_REJECT_UNAUTHORIZED` from Cloud Run.
+App connects with `kafkaConfig.ssl = false` + SASL/PLAIN credentials. Broker external listener is `SASL_PLAINTEXT` (no TLS). `NODE_TLS_REJECT_UNAUTHORIZED=0` in Cloud Run is no longer needed and can be removed.
 
 ### Create / recreate topics
 
