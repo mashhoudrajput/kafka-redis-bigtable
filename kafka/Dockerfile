@@ -1,11 +1,13 @@
-# Stage 1: Compile Java files inside the Kafka image so Kafka's JARs are on the classpath.
-# AllowAllCallbackHandler needs kafka-clients.jar (PlainAuthenticateCallback) at compile time.
-FROM apache/kafka:3.9.0 AS builder
-USER root
+# Pull Kafka libs so AllowAllCallbackHandler can reference PlainAuthenticateCallback at compile time
+FROM apache/kafka:3.9.0 AS kafka-libs
+
+# Stage 1: Compile using a JDK, with Kafka libs on the classpath
+FROM eclipse-temurin:21-jdk AS builder
+COPY --from=kafka-libs /opt/kafka/libs /kafka-libs
 WORKDIR /build
 COPY AllowAllLoginModule.java AllowAllCallbackHandler.java ./
 RUN javac AllowAllLoginModule.java && \
-    javac -cp "/opt/kafka/libs/*" AllowAllCallbackHandler.java && \
+    javac -cp "/kafka-libs/*" AllowAllCallbackHandler.java && \
     jar cf allowall.jar AllowAllLoginModule.class AllowAllCallbackHandler.class
 
 # Stage 2: Install JAR + startup script
