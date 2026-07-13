@@ -7,6 +7,7 @@ echo "=== Kafka Dev Startup (SASL_SSL) ==="
 PASS=kafkadev
 HOST="${KAFKA_HOST_IP:-127.0.0.1}"
 SSL_DIR=/tmp/kafka-ssl
+rm -rf "$SSL_DIR"
 mkdir -p "$SSL_DIR"
 cd "$SSL_DIR"
 
