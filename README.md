@@ -33,6 +33,32 @@ docker compose up -d
 
 cd ../bigtable
 docker compose up -d   # bigtable-init runs automatically and creates all tables
+
+# Enable auto-start on VM boot (run once after fresh deploy)
+sudo tee /etc/systemd/system/dev-stacks.service > /dev/null << 'UNIT'
+[Unit]
+Description=MedicalCircle Dev Emulator Stacks (Kafka + Redis + Bigtable)
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/ubuntu/kafka-redis-bigtable
+ExecStart=/usr/bin/docker compose -f kafka/docker-compose.yml up -d
+ExecStart=/usr/bin/docker compose -f redis/docker-compose.yml up -d
+ExecStart=/usr/bin/docker compose -f bigtable/docker-compose.yml up -d
+ExecStartPost=/bin/bash /home/ubuntu/kafka-redis-bigtable/kafka/create-topics.sh
+ExecStop=/usr/bin/docker compose -f kafka/docker-compose.yml down
+ExecStop=/usr/bin/docker compose -f redis/docker-compose.yml down
+ExecStop=/usr/bin/docker compose -f bigtable/docker-compose.yml down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable dev-stacks.service
 ```
 
 ---
@@ -88,7 +114,7 @@ bash ~/kafka-redis-bigtable/kafka/create-topics.sh
 | `msg.tasklist.t0/t1/t2` | 3 each |
 | `msg.user.t0/t1/t2` | 3 each |
 
-UUID-based topics are created dynamically by the app. Set `KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"` in `kafka/docker-compose.yml` if needed.
+UUID-based and `private_*` stream topics are created dynamically by the app (`KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"`).
 
 ---
 
