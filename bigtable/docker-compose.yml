@@ -5,7 +5,11 @@ services:
     restart: unless-stopped
     ports:
       - "8086:8086"
-    command: gcloud beta emulators bigtable start --host-port=0.0.0.0:8086
+    # --data-dir persists table schemas and row data across container restarts and VM reboots.
+    # Without it the emulator is pure in-memory and loses everything on restart.
+    command: gcloud beta emulators bigtable start --host-port=0.0.0.0:8086 --data-dir=/bigtable-data
+    volumes:
+      - bigtable_data:/bigtable-data
     healthcheck:
       # gRPC port — bash tcp probe since curl can't speak gRPC
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8086' 2>/dev/null"]
@@ -33,3 +37,7 @@ services:
     volumes:
       - ./bootstrap-bigtable.sh:/bootstrap.sh:ro
     entrypoint: ["/bin/bash", "/bootstrap.sh"]
+
+volumes:
+  bigtable_data:
+    driver: local
