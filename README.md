@@ -49,7 +49,7 @@ ExecStart=/usr/bin/docker compose -f kafka/docker-compose.yml up -d
 ExecStart=/usr/bin/docker compose -f redis/docker-compose.yml up -d
 ExecStart=/usr/bin/docker compose -f bigtable/docker-compose.yml up -d
 ExecStartPost=/bin/bash /home/ubuntu/kafka-redis-bigtable/kafka/create-topics.sh
-ExecStartPost=/usr/bin/docker run --rm --network bigtable_default -e BIGTABLE_EMULATOR_HOST=bigtable-emulator:8086 -e BIGTABLE_PROJECT=677473027585 -e BIGTABLE_INSTANCE=medicalcircles-messaging-dev -v /home/ubuntu/kafka-redis-bigtable/bigtable/bootstrap-bigtable.sh:/bootstrap.sh:ro gcr.io/google.com/cloudsdktool/cloud-sdk:latest bash /bootstrap.sh
+ExecStartPost=/usr/bin/docker run --rm --network bigtable_default -e BIGTABLE_EMULATOR_HOST=bigtable-emulator:8086 -e BIGTABLE_PROJECT=lively-synapse-400818 -e BIGTABLE_INSTANCE=medicalcircles-messaging-dev -v /home/ubuntu/kafka-redis-bigtable/bigtable/bootstrap-bigtable.sh:/bootstrap.sh:ro gcr.io/google.com/cloudsdktool/cloud-sdk:latest bash /bootstrap.sh
 ExecStop=/usr/bin/docker compose -f kafka/docker-compose.yml down
 ExecStop=/usr/bin/docker compose -f redis/docker-compose.yml down
 ExecStop=/usr/bin/docker compose -f bigtable/docker-compose.yml down
@@ -128,9 +128,9 @@ Single-node, no auth, 256 MB memory cap. No changes needed in Cloud Run — `RED
 ## Bigtable Emulator
 
 Instance name: `medicalcircles-messaging-dev`  
-Project: `677473027585` (numeric ID for `lively-synapse-400818`)
+Project: `lively-synapse-400818`
 
-> **Why the number?** `@google-cloud/bigtable` v6 resolves the project string to its numeric ID via the Resource Manager API before querying Bigtable. The emulator namespace must match what the client sends, so all tooling uses `677473027585`.
+> **Why the string, not the numeric ID?** In emulator mode (`BIGTABLE_EMULATOR_HOST` set), the gRPC client skips the Resource Manager API and sends the raw project string directly in the table path. The emulator namespace must match, so all tooling uses the string ID `lively-synapse-400818`.
 
 `bigtable-init` runs once on first `docker compose up` and creates all 10 tables.
 
@@ -155,7 +155,7 @@ To re-run the table bootstrap manually:
 docker run --rm \
   --network bigtable_default \
   -e BIGTABLE_EMULATOR_HOST=bigtable-emulator:8086 \
-  -e BIGTABLE_PROJECT=677473027585 \
+  -e BIGTABLE_PROJECT=lively-synapse-400818 \
   -e BIGTABLE_INSTANCE=medicalcircles-messaging-dev \
   -v $(pwd)/bigtable/bootstrap-bigtable.sh:/bootstrap.sh:ro \
   gcr.io/google.com/cloudsdktool/cloud-sdk:latest \
@@ -183,7 +183,7 @@ docker exec -it redis redis-cli
 docker run --rm --network bigtable_default \
   -e BIGTABLE_EMULATOR_HOST=bigtable-emulator:8086 \
   gcr.io/google.com/cloudsdktool/cloud-sdk:latest \
-  cbt -project 677473027585 -instance medicalcircles-messaging-dev ls
+  cbt -project lively-synapse-400818 -instance medicalcircles-messaging-dev ls
 
 # ── Restart stacks ──────────────────────────────────────────────────────────
 docker compose -f ~/kafka-redis-bigtable/kafka/docker-compose.yml restart

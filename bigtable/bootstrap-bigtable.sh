@@ -11,17 +11,17 @@
 #   BIGTABLE_EMULATOR_HOST=10.216.0.17:8086 ./bootstrap-bigtable.sh
 #
 #   Optional overrides:
-#     BIGTABLE_PROJECT=677473027585   (numeric project NUMBER for lively-synapse-400818)
+#     BIGTABLE_PROJECT=lively-synapse-400818   (GCP project string ID)
 #     BIGTABLE_INSTANCE=medicalcircles-messaging-dev
 #
-# NOTE: Use the numeric project NUMBER (677473027585), not the string ID (lively-synapse-400818).
-# The @google-cloud/bigtable Node.js client v6 resolves the project ID to its number via
-# Resource Manager before querying, so the emulator namespace must match.
+# NOTE: Use the project STRING ID (lively-synapse-400818), not the numeric ID.
+# In emulator mode, the gRPC client skips Resource Manager and sends the raw project string
+# directly in the table path. The emulator namespace must match what the client sends.
 
 set -euo pipefail
 
 : "${BIGTABLE_EMULATOR_HOST:?ERROR: BIGTABLE_EMULATOR_HOST must be set, e.g. BIGTABLE_EMULATOR_HOST=10.216.0.17:8086}"
-BIGTABLE_PROJECT="${BIGTABLE_PROJECT:-677473027585}"
+BIGTABLE_PROJECT="${BIGTABLE_PROJECT:-lively-synapse-400818}"
 BIGTABLE_INSTANCE="${BIGTABLE_INSTANCE:-medicalcircles-messaging-dev}"
 
 export BIGTABLE_EMULATOR_HOST

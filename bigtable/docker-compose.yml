@@ -24,11 +24,9 @@ services:
         condition: service_healthy
     environment:
       BIGTABLE_EMULATOR_HOST: bigtable-emulator:8086
-      # Use the numeric project NUMBER, not the ID string.
-      # The @google-cloud/bigtable Node.js client v6 resolves the project ID to
-      # its number via Resource Manager before querying Bigtable, so the emulator
-      # must be bootstrapped under the same number (677473027585 = lively-synapse-400818).
-      BIGTABLE_PROJECT: "677473027585"
+      # Use the project STRING ID. In emulator mode the gRPC client skips Resource Manager
+      # and sends the raw project string in the table path — emulator must match.
+      BIGTABLE_PROJECT: "lively-synapse-400818"
       BIGTABLE_INSTANCE: medicalcircles-messaging-dev
     volumes:
       - ./bootstrap-bigtable.sh:/bootstrap.sh:ro
